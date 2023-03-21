@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 
 	"github.com/google/uuid"
@@ -23,34 +25,61 @@ func NewProductRepo(fileName string, file *os.File) *productRepo {
 	}
 }
 
-func (u *productRepo) CreateProduct(req *models.CreateProduct) (id string, err error) {
-
+func (u *productRepo) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	// read file
 	var products []*models.Product
-	err = json.NewDecoder(u.file).Decode(&products)
+	err := json.NewDecoder(u.file).Decode(&products)
 	if err != nil {
-		return "", err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
-	id = uuid.NewString()
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
 
+	//  unmarshal data
+	var product models.Product
+	err = json.Unmarshal(body, &product)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	id := uuid.NewString()
 	products = append(products, &models.Product{
 		Id:         id,
-		Name:       req.Name,
-		Price:      req.Price,
-		CategoryId: req.CategoryId,
+		Name:       product.Name,
+		Price:      product.Price,
+		CategoryId: product.CategoryId,
 	})
 
-	body, err := json.MarshalIndent(products, "", "   ")
-
+	body, err = json.MarshalIndent(products, "", "   ")
 	if err != nil {
-		return "", err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return "", err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return id, nil
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Created successfully!"))
 }
 
 // Get list of Products

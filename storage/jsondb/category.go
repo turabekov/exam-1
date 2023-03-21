@@ -3,9 +3,11 @@ package jsondb
 import (
 	"app/models"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -22,119 +24,298 @@ func NewCategoryRepo(fileName string, file *os.File) *categoryRepo {
 	}
 }
 
-func (c *categoryRepo) Create(req *models.CreateCategory) (string, error) {
+func (c *categoryRepo) Create(w http.ResponseWriter, r *http.Request) {
+	// read and unmarshal category
+	var categories []models.Category
 	data, err := ioutil.ReadFile(c.fileName)
 	if err != nil {
-		return "", err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
-
-	var categories []models.Category
 	err = json.Unmarshal(data, &categories)
 	if err != nil {
-		return "", err
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  read request body unmarshal data
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+	var category models.Category
+	err = json.Unmarshal(body, &category)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	// check existing of parent category  id in categories
+	flag := false
+	for _, ctg := range categories {
+		if ctg.Id == category.ParentID {
+			flag = true
+			break
+		}
+	}
+	if !flag {
+		log.Println("parent id err: parent id not found")
+		w.WriteHeader(400)
+		w.Write([]byte("parent category not found"))
+		return
 	}
 
 	uuid := uuid.New().String()
-
 	categories = append(categories, models.Category{
 		Id:       uuid,
-		Name:     req.Name,
-		ParentID: req.ParentID,
+		Name:     category.Name,
+		ParentID: category.ParentID,
 	})
 
-	body, err := json.MarshalIndent(categories, "", " ")
+	body, err = json.MarshalIndent(categories, "", " ")
 	if err != nil {
-		return "", err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-
 	err = ioutil.WriteFile(c.fileName, body, os.ModePerm)
 	if err != nil {
-		return "", err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-	return uuid, nil
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Created successfully!"))
 }
 
-func (u *categoryRepo) GetByID(req *models.CategoryPrimaryKey) (models.Category, error) {
+func (u *categoryRepo) GetByID(w http.ResponseWriter, r *http.Request) {
 	categories, err := u.Read()
 	if err != nil {
-		return models.Category{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	for _, v := range categories {
-		if v.Id == req.Id {
+	//  read request body
+	id := r.URL.Path[len("/category/"):]
 
+	for _, v := range categories {
+		if v.Id == id {
 			for _, subCategory := range categories {
 				if v.Id == subCategory.ParentID {
 					v.SubCategories = append(v.SubCategories, subCategory)
+
 				}
 			}
-
-			return v, nil
+			body, err := json.Marshal(v)
+			if err != nil {
+				log.Println("Unmarshal err:", err)
+				w.WriteHeader(500)
+				w.Write([]byte("Incorrect data"))
+				return
+			}
+			w.WriteHeader(http.StatusFound)
+			w.Write(body)
+			return
 		}
 	}
 
-	return models.Category{}, errors.New("there is no category with this id")
+	res := "user with id" + " " + id + " " + "not existed"
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte(res))
 }
 
-func (u *categoryRepo) GetAll(req *models.GetListCategoryRequest) (models.GetListCategoryResponse, error) {
+// (models.GetListCategoryResponse, error)
+func (u *categoryRepo) GetAll(w http.ResponseWriter, r *http.Request) {
 	categories, err := u.Read()
 	if err != nil {
-		return models.GetListCategoryResponse{}, err
+		log.Println("read file and unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	if req.Limit+req.Offset > len(categories) {
-		return models.GetListCategoryResponse{}, errors.New("out of range")
+	// get query params limit offset
+	var (
+		limit    int
+		offset   int
+		response *models.GetListCategoryResponse
+		e        error
+	)
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+	if limitStr == "" {
+		limit = len(categories)
+	} else {
+		limit, e = strconv.Atoi(limitStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+	if offsetStr == "" {
+		offset = 0
+	} else {
+		offset, e = strconv.Atoi(offsetStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+	// -------------------------------------------------------------------------------------------------------------------------------------
+	if limit+offset > len(categories) {
+		if offset > len(categories) {
+			response = &models.GetListCategoryResponse{
+				Count:      len(categories),
+				Categories: []models.Category{},
+			}
+		} else {
+			response = &models.GetListCategoryResponse{
+				Count:      len(categories),
+				Categories: categories[offset:],
+			}
+		}
+
+	} else {
+		response = &models.GetListCategoryResponse{
+			Count:      len(categories),
+			Categories: categories[offset : limit+offset],
+		}
 	}
 
-	Categories := []models.Category{}
-	for i := req.Offset; i < req.Offset+req.Limit; i++ {
-		Categories = append(Categories, categories[i])
+	for i, v := range response.Categories {
+		for _, subCategory := range response.Categories {
+			if v.Id == subCategory.ParentID {
+				response.Categories[i].SubCategories = append(response.Categories[i].SubCategories, subCategory)
+			}
+		}
 	}
-	return models.GetListCategoryResponse{
-		Categories: Categories,
-		Count:      len(Categories),
-	}, nil
+
+	body, err := json.Marshal(response)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+	w.Write(body)
 }
 
-func (u *categoryRepo) Update(req *models.UpdateCategory, userId string) error {
+func (u *categoryRepo) Update(w http.ResponseWriter, r *http.Request) {
 	categories, err := u.Read()
 	if err != nil {
-		return err
+		return
 	}
 
-	flag := true
+	updatedCategory := models.UpdateCategory{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	err = json.Unmarshal(body, &updatedCategory)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range categories {
-		if v.Id == userId {
-			categories[i].Name = req.Name
-			categories[i].ParentID = req.ParentID
-			flag = false
+		if v.Id == updatedCategory.Id {
+			if updatedCategory.Name != "" {
+				categories[i].Name = updatedCategory.Name
+			}
+			if updatedCategory.ParentID != "" {
+				categories[i].ParentID = updatedCategory.ParentID
+			}
+			flag = true
 		}
 	}
 
-	if flag {
-		return errors.New("there is no category with this id")
+	if !flag {
+		res := "category with id" + " " + updatedCategory.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
-
-	body, err := json.MarshalIndent(categories, "", " ")
+	// marshal updated  data and write it into  file
+	body, err = json.MarshalIndent(categories, "", "   ")
 	if err != nil {
-		return err
+		if err != nil {
+			log.Println("Marshal err:", err)
+			w.WriteHeader(500)
+			w.Write([]byte("Incorrect data"))
+			return
+		}
 	}
-
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-	return nil
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("category updated successfully!"))
 }
 
-func (u *categoryRepo) Delete(req *models.CategoryPrimaryKey) error {
+func (u *categoryRepo) Delete(w http.ResponseWriter, r *http.Request) {
 	categories, err := u.Read()
 	if err != nil {
-		return err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
+
+	category := models.UpdateCategory{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	err = json.Unmarshal(body, &category)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
 	flag := true
 	for i, v := range categories {
-		if v.Id == req.Id {
+		if v.Id == category.Id {
 			categories = append(categories[:i], categories[i+1:]...)
 			flag = false
 			break
@@ -142,19 +323,30 @@ func (u *categoryRepo) Delete(req *models.CategoryPrimaryKey) error {
 	}
 
 	if flag {
-		return errors.New("there is no user with this id")
+		res := "category with id" + " " + category.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(categories, "", " ")
+	body, err = json.MarshalIndent(categories, "", " ")
 	if err != nil {
-		return err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-	return nil
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Deleted successfully!"))
 }
 
 func (u *categoryRepo) Read() ([]models.Category, error) {

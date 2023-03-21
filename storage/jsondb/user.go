@@ -3,9 +3,11 @@ package jsondb
 import (
 	"app/models"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -23,169 +25,341 @@ func NewUserRepo(fileName string, file *os.File) *userRepo {
 	}
 }
 
-func (u *userRepo) Create(req *models.CreateUser) (id string, err error) {
-
+func (u *userRepo) CreateUser(w http.ResponseWriter, r *http.Request) {
+	// read users from file
 	var users []*models.User
-	err = json.NewDecoder(u.file).Decode(&users)
+	err := json.NewDecoder(u.file).Decode(&users)
 	if err != nil {
-		return "", err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
-	id = uuid.NewString()
 
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	var user models.User
+	err = json.Unmarshal(body, &user)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	// add new user
+	id := uuid.NewString()
 	users = append(users, &models.User{
 		Id:      id,
-		Name:    req.Name,
-		Surname: req.Surname,
-		Balance: req.Balance,
+		Name:    user.Name,
+		Surname: user.Surname,
+		Balance: user.Balance,
 	})
-
-	body, err := json.MarshalIndent(users, "", "   ")
-
+	// marshal it to json format
+	body, err = json.MarshalIndent(users, "", "   ")
 	if err != nil {
-		return "", err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-
+	// write it into json file
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return "", err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return id, nil
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Created successfully!"))
 }
 
 // Get list of Users
-func (u *userRepo) GetList(req *models.GetListRequest) (*models.GetListResponse, error) {
+func (u *userRepo) GetList(w http.ResponseWriter, r *http.Request) {
+	// read users from  file
 	users := make([]models.User, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return nil, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &users)
 	if err != nil {
-		return nil, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	// get query params limit offset
+	var (
+		limit    int
+		offset   int
+		response *models.GetListResponse
+		e        error
+	)
+
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	if limitStr == "" {
+		limit = len(users)
+	} else {
+		limit, e = strconv.Atoi(limitStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+	if offsetStr == "" {
+		offset = 0
+	} else {
+		offset, e = strconv.Atoi(offsetStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
 	}
 
-	if req.Limit+req.Offset > len(users) {
-		if req.Offset > len(users) {
-			return &models.GetListResponse{
+	if limit+offset > len(users) {
+		if offset > len(users) {
+			response = &models.GetListResponse{
 				Count: len(users),
 				Users: []models.User{},
-			}, nil
+			}
+		} else {
+			response = &models.GetListResponse{
+				Count: len(users),
+				Users: users[offset:],
+			}
 		}
 
-		return &models.GetListResponse{
+	} else {
+		response = &models.GetListResponse{
 			Count: len(users),
-			Users: users[req.Offset:],
-		}, nil
+			Users: users[offset : limit+offset],
+		}
 	}
 
-	response := &models.GetListResponse{
-		Count: len(users),
-		Users: users[req.Offset : req.Limit+req.Offset],
+	body, err := json.Marshal(response)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-
-	return response, nil
+	w.WriteHeader(http.StatusAccepted)
+	w.Write(body)
 }
 
 // Get list by id
-func (u *userRepo) GetUserById(req *models.UserPrimaryKey) (models.User, error) {
+func (u *userRepo) GetUserById(w http.ResponseWriter, r *http.Request) {
+	// read All users from file
 	users := make([]models.User, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.User{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
+	// unmarshal it
 	err = json.Unmarshal(data, &users)
 	if err != nil {
-		return models.User{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
+	//  read request body
+	id := r.URL.Path[len("/user/"):]
+
 	for _, v := range users {
-		if v.Id == req.Id {
-			return v, nil
+		if v.Id == id {
+			body, err := json.Marshal(v)
+			if err != nil {
+				log.Println("Unmarshal err:", err)
+				w.WriteHeader(500)
+				w.Write([]byte("Incorrect data"))
+				return
+			}
+			w.WriteHeader(http.StatusFound)
+			w.Write(body)
+			return
 		}
 	}
 
-	return models.User{}, errors.New("user not found")
+	res := "user with id" + " " + id + " " + "not existed"
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte(res))
 }
 
 // Update user by id
-func (u *userRepo) UpdateUser(req *models.UpdateUser) (models.User, error) {
+func (u *userRepo) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	// read file
 	users := make([]models.User, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.User{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &users)
 	if err != nil {
-		return models.User{}, err
+		log.Println("unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
 	updatedUser := models.User{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	err = json.Unmarshal(body, &updatedUser)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range users {
-		if v.Id == req.Id {
-			users[i].Name = req.Name
-			users[i].Surname = req.Surname
-			users[i].Balance = req.Balance
-			updatedUser = users[i]
+		if v.Id == updatedUser.Id {
+			if updatedUser.Name != "" {
+				users[i].Name = updatedUser.Name
+			}
+			if updatedUser.Surname != "" {
+				users[i].Surname = updatedUser.Surname
+			}
+			if updatedUser.Balance != 0 {
+				users[i].Balance = updatedUser.Balance
+			}
+			flag = true
 		}
 	}
 
-	if len(updatedUser.Name) <= 0 {
-		return models.User{}, errors.New("user not found")
+	if !flag {
+		res := "user with id" + " " + updatedUser.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
-
-	body, err := json.MarshalIndent(users, "", "   ")
-
+	// marshal updated  data and write it into  file
+	body, err = json.MarshalIndent(users, "", "   ")
 	if err != nil {
-		return models.User{}, err
+		if err != nil {
+			log.Println("Marshal err:", err)
+			w.WriteHeader(500)
+			w.Write([]byte("Incorrect data"))
+			return
+		}
 	}
-
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.User{}, err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return updatedUser, nil
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("User updated successfully!"))
 }
 
 // Delete user by id
-func (u *userRepo) DeleteUser(req *models.UserPrimaryKey) (models.User, error) {
+func (u *userRepo) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	users := make([]models.User, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.User{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &users)
 	if err != nil {
-		return models.User{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	deletedUser := models.User{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	var userId models.UserPrimaryKey
+	err = json.Unmarshal(body, &userId)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range users {
-		if v.Id == req.Id {
-			deletedUser = users[i]
+		if v.Id == userId.Id {
 			users = append(users[:i], users[i+1:]...)
+			flag = true
+
 		}
 	}
 
-	if len(deletedUser.Name) <= 0 {
-		return models.User{}, errors.New("user not found")
+	if !flag {
+		res := "user with id" + " " + userId.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(users, "", "   ")
-
+	body, err = json.MarshalIndent(users, "", "   ")
 	if err != nil {
-		return models.User{}, err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.User{}, err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return deletedUser, nil
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Deleted successfully!"))
 }

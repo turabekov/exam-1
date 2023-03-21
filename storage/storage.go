@@ -1,6 +1,9 @@
 package storage
 
-import "app/models"
+import (
+	"app/models"
+	"net/http"
+)
 
 type StorageI interface {
 	CloseDB()
@@ -13,15 +16,15 @@ type StorageI interface {
 }
 
 type UserRepoI interface {
-	Create(*models.CreateUser) (string, error)
-	GetUserById(req *models.UserPrimaryKey) (models.User, error)
-	GetList(req *models.GetListRequest) (*models.GetListResponse, error)
-	UpdateUser(req *models.UpdateUser) (models.User, error)
-	DeleteUser(req *models.UserPrimaryKey) (models.User, error)
+	CreateUser(w http.ResponseWriter, r *http.Request)
+	GetUserById(w http.ResponseWriter, r *http.Request)
+	GetList(w http.ResponseWriter, r *http.Request)
+	UpdateUser(w http.ResponseWriter, r *http.Request)
+	DeleteUser(w http.ResponseWriter, r *http.Request)
 }
 
 type ProductRepoI interface {
-	CreateProduct(req *models.CreateProduct) (id string, err error)
+	CreateProduct(w http.ResponseWriter, r *http.Request)
 	GetListProduct(req *models.GetListProductRequest) (*models.GetListProductResponse, error)
 	GetProductById(req *models.ProductPrimaryKey) (models.Product, error)
 	UpdateProduct(req *models.UpdateProduct) (models.Product, error)
@@ -42,11 +45,11 @@ type KomissiyaRepoI interface {
 }
 
 type CategoryRepoI interface {
-	Create(*models.CreateCategory) (string, error)
-	GetByID(*models.CategoryPrimaryKey) (models.Category, error)
-	GetAll(*models.GetListCategoryRequest) (models.GetListCategoryResponse, error)
-	Update(*models.UpdateCategory, string) error
-	Delete(*models.CategoryPrimaryKey) error
+	Create(w http.ResponseWriter, r *http.Request)
+	GetByID(w http.ResponseWriter, r *http.Request)
+	GetAll(w http.ResponseWriter, r *http.Request)
+	Update(w http.ResponseWriter, r *http.Request)
+	Delete(w http.ResponseWriter, r *http.Request)
 }
 
 type BranchRepoI interface {
