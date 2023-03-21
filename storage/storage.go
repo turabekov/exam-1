@@ -25,10 +25,10 @@ type UserRepoI interface {
 
 type ProductRepoI interface {
 	CreateProduct(w http.ResponseWriter, r *http.Request)
-	GetListProduct(req *models.GetListProductRequest) (*models.GetListProductResponse, error)
-	GetProductById(req *models.ProductPrimaryKey) (models.Product, error)
-	UpdateProduct(req *models.UpdateProduct) (models.Product, error)
-	DeleteProduct(req *models.ProductPrimaryKey) (models.Product, error)
+	GetListProduct(w http.ResponseWriter, r *http.Request)
+	GetProductById(w http.ResponseWriter, r *http.Request)
+	UpdateProduct(w http.ResponseWriter, r *http.Request)
+	DeleteProduct(w http.ResponseWriter, r *http.Request)
 }
 
 type ShopCartRepoI interface {
@@ -53,9 +53,9 @@ type CategoryRepoI interface {
 }
 
 type BranchRepoI interface {
-	CreateBranch(req *models.BranchReq) (id string, err error)
-	GetList(req *models.GetBranchListRequest) (*models.GetBranchListResponse, error)
-	GetBranchById(req *models.BranchPrimaryKey) (models.Branch, error)
-	UpdateBranch(req *models.Branch) (models.Branch, error)
-	DeleteBranch(req *models.BranchPrimaryKey) (models.Branch, error)
+	CreateBranch(w http.ResponseWriter, r *http.Request)
+	GetAll(w http.ResponseWriter, r *http.Request)
+	GetBranchById(w http.ResponseWriter, r *http.Request)
+	UpdateBranch(w http.ResponseWriter, r *http.Request)
+	DeleteBranch(w http.ResponseWriter, r *http.Request)
 }

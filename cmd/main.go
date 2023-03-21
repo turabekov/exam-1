@@ -32,6 +32,10 @@ func main() {
 	http.HandleFunc("/product", c.Product)
 	http.HandleFunc("/product/", c.Product)
 
+	// branch api crud
+	http.HandleFunc("/branch", c.Branch)
+	http.HandleFunc("/branch/", c.Branch)
+
 	// Running server
 	fmt.Println("Server running on port 3000")
 	err = http.ListenAndServe("localhost:3000", nil)

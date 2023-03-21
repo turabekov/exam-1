@@ -3,11 +3,11 @@ package jsondb
 import (
 	"app/models"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -83,146 +83,279 @@ func (u *productRepo) CreateProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get list of Products
-func (u *productRepo) GetListProduct(req *models.GetListProductRequest) (*models.GetListProductResponse, error) {
+func (u *productRepo) GetListProduct(w http.ResponseWriter, r *http.Request) {
+	// read users from  file
 	products := make([]models.Product, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return nil, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &products)
 	if err != nil {
-		return nil, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	if req.Limit+req.Offset > len(products) {
-		if req.Offset > len(products) {
-			return &models.GetListProductResponse{
+	// get query params limit offset
+	var (
+		limit    int
+		offset   int
+		response *models.GetListProductResponse
+		e        error
+	)
+
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	if limitStr == "" {
+		limit = len(products)
+	} else {
+		limit, e = strconv.Atoi(limitStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+	if offsetStr == "" {
+		offset = 0
+	} else {
+		offset, e = strconv.Atoi(offsetStr)
+		if e != nil {
+			log.Println("strconv err:", err)
+			w.WriteHeader(400)
+			w.Write([]byte(err.Error()))
+			return
+		}
+	}
+
+	if limit+offset > len(products) {
+		if offset > len(products) {
+			response = &models.GetListProductResponse{
 				Count:    len(products),
 				Products: []models.Product{},
-			}, nil
+			}
+		} else {
+			response = &models.GetListProductResponse{
+				Count:    len(products),
+				Products: products[offset:],
+			}
 		}
 
-		return &models.GetListProductResponse{
+	} else {
+		response = &models.GetListProductResponse{
 			Count:    len(products),
-			Products: products[req.Offset:],
-		}, nil
+			Products: products[offset : limit+offset],
+		}
 	}
 
-	response := &models.GetListProductResponse{
-		Count:    len(products),
-		Products: products[req.Offset : req.Limit+req.Offset],
+	body, err := json.Marshal(response)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
-
-	return response, nil
+	w.WriteHeader(http.StatusAccepted)
+	w.Write(body)
 }
 
 // Get list by id
-func (u *productRepo) GetProductById(req *models.ProductPrimaryKey) (models.Product, error) {
+func (u *productRepo) GetProductById(w http.ResponseWriter, r *http.Request) {
+	// read and unmarshal file
 	products := make([]models.Product, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &products)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
+
+	//  read request body
+	id := r.URL.Path[len("/product/"):]
 
 	for _, v := range products {
-		if v.Id == req.Id {
-			return v, nil
+		if v.Id == id {
+			body, err := json.Marshal(v)
+			if err != nil {
+				log.Println("Unmarshal err:", err)
+				w.WriteHeader(500)
+				w.Write([]byte("Incorrect data"))
+				return
+			}
+			w.WriteHeader(http.StatusFound)
+			w.Write(body)
+			return
 		}
 	}
 
-	return models.Product{}, errors.New("product not found")
+	res := "product with id" + " " + id + " " + "not found"
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte(res))
 }
 
-// Update user by id
-func (u *productRepo) UpdateProduct(req *models.UpdateProduct) (models.Product, error) {
+// Update product by id
+// models.UpdateProduct
+func (u *productRepo) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	products := make([]models.Product, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &products)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	updatedUser := models.Product{}
+	updatedProduct := models.UpdateProduct{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+	//  unmarshal data
+	err = json.Unmarshal(body, &updatedProduct)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range products {
-		if v.Id == req.Id {
-			if len(req.Name) != 0 {
-				products[i].Name = req.Name
+		if v.Id == updatedProduct.Id {
+			if len(updatedProduct.Name) != 0 {
+				products[i].Name = updatedProduct.Name
 			}
-			if req.Price != 0 {
-				products[i].Price = req.Price
+			if updatedProduct.Price != 0 {
+				products[i].Price = updatedProduct.Price
 			}
-			if len(req.CategoryId) != 0 {
-				products[i].CategoryId = req.CategoryId
+			if len(updatedProduct.CategoryId) != 0 {
+				products[i].CategoryId = updatedProduct.CategoryId
 			}
-			updatedUser = products[i]
+			flag = true
 		}
 	}
 
-	if len(updatedUser.Name) <= 0 {
-		return models.Product{}, errors.New("product not found")
+	if !flag {
+		res := "product with id" + " " + updatedProduct.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(products, "", "   ")
-
+	body, err = json.MarshalIndent(products, "", "   ")
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return updatedUser, nil
-
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("Product updated successfully!"))
 }
 
 // Delete user by id
-func (u *productRepo) DeleteProduct(req *models.ProductPrimaryKey) (models.Product, error) {
+func (u *productRepo) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	products := make([]models.Product, 0)
-
 	data, err := ioutil.ReadFile(u.fileName)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("read file err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &products)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	deletedUser := models.Product{}
+	//  read request body
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	//  unmarshal data
+	var productId models.ProductPrimaryKey
+	err = json.Unmarshal(body, &productId)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range products {
-		if v.Id == req.Id {
-			deletedUser = products[i]
+		if v.Id == productId.Id {
 			products = append(products[:i], products[i+1:]...)
+			flag = true
 		}
 	}
 
-	if len(deletedUser.Name) <= 0 {
-		return models.Product{}, errors.New("user not found")
+	if !flag {
+		res := "product with id" + " " + productId.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(products, "", "   ")
-
+	body, err = json.MarshalIndent(products, "", "   ")
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.Product{}, err
+		log.Println("Write file err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return deletedUser, nil
-
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Deleted successfully!"))
 }

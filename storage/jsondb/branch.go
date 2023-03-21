@@ -3,8 +3,9 @@ package jsondb
 import (
 	"app/models"
 	"encoding/json"
-	"errors"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 
 	"github.com/google/uuid"
@@ -23,167 +24,303 @@ func NewBranchRepo(fileName string, file *os.File) *branchRepo {
 	}
 }
 
-func (b *branchRepo) CreateBranch(req *models.BranchReq) (id string, err error) {
-
-	var branches []*models.Branch
-	err = json.NewDecoder(b.file).Decode(&branches)
+func (b *branchRepo) CreateBranch(w http.ResponseWriter, r *http.Request) {
+	// readFile
+	branches := make([]models.Branch, 0)
+	data, err := ioutil.ReadFile(b.fileName)
 	if err != nil {
-		return "", err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	err = json.Unmarshal(data, &branches)
+	if err != nil {
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	id = uuid.NewString()
-
-	branches = append(branches, &models.Branch{
-		Id:   id,
-		Name: req.Name,
-	})
-
-	body, err := json.MarshalIndent(branches, "", "   ")
-
+	// create branch
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		return "", err
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	var branch models.Branch
+
+	err = json.Unmarshal(body, &branch)
+	if err != nil {
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	branch.Id = uuid.New().String()
+
+	body, err = json.Marshal(branch)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	branches = append(branches, branch)
+	// write into json file
+	body, err = json.MarshalIndent(branches, "", "   ")
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(b.fileName, body, os.ModePerm)
 	if err != nil {
-		return "", err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return id, nil
+	jsonBranch, err := json.MarshalIndent(branch, "", "   ")
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write(jsonBranch)
 }
 
-// Get list of Users
-func (b *branchRepo) GetList(req *models.GetBranchListRequest) (*models.GetBranchListResponse, error) {
+// ==============================================================================================================================================
+func (b *branchRepo) GetAll(w http.ResponseWriter, r *http.Request) {
+	// readFile
 	branches := make([]models.Branch, 0)
-
 	data, err := ioutil.ReadFile(b.fileName)
 	if err != nil {
-		return nil, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &branches)
 	if err != nil {
-		return nil, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	if req.Limit+req.Offset > len(branches) {
-		if req.Offset > len(branches) {
-			return &models.GetBranchListResponse{
-				Count:    len(branches),
-				Branches: []models.Branch{},
-			}, nil
-		}
-
-		return &models.GetBranchListResponse{
-			Count:    len(branches),
-			Branches: branches[req.Offset:],
-		}, nil
+	// json stringify
+	body, err := json.Marshal(branches)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	response := &models.GetBranchListResponse{
-		Count:    len(branches),
-		Branches: branches[req.Offset : req.Limit+req.Offset],
-	}
-
-	return response, nil
+	w.WriteHeader(200)
+	w.Write(body)
 }
 
-// Get branch by id
-func (b *branchRepo) GetBranchById(req *models.BranchPrimaryKey) (models.Branch, error) {
+// ==============================================================================================================================================
+func (b *branchRepo) GetBranchById(w http.ResponseWriter, r *http.Request) {
+	// readFile
 	branches := make([]models.Branch, 0)
-
 	data, err := ioutil.ReadFile(b.fileName)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &branches)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	for _, v := range branches {
-		if v.Id == req.Id {
-			return v, nil
+	id := r.URL.Path[len("/branch/"):]
+
+	var (
+		branch models.Branch
+	)
+
+	for ind, _ := range branches {
+		if id == branches[ind].Id {
+			branch = branches[ind]
+			break
 		}
 	}
 
-	return models.Branch{}, errors.New("branch not found")
+	body, err := json.Marshal(branch)
+	if err != nil {
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	w.WriteHeader(200)
+	w.Write(body)
 }
 
-// Update user by id
-func (b *branchRepo) UpdateBranch(req *models.Branch) (models.Branch, error) {
+// ==============================================================================================================================================
+func (b *branchRepo) UpdateBranch(w http.ResponseWriter, r *http.Request) {
+	// readFile
 	branches := make([]models.Branch, 0)
-
 	data, err := ioutil.ReadFile(b.fileName)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &branches)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	updatedBranch := models.Branch{}
-	for i, v := range branches {
-		if v.Id == req.Id {
-			branches[i].Name = req.Name
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
 
-			updatedBranch = branches[i]
+	var branch models.Branch
+
+	err = json.Unmarshal(body, &branch)
+	if err != nil {
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
+	for i, _ := range branches {
+		if branch.Id == branches[i].Id {
+			branches[i].Name = branch.Name
+			flag = true
 		}
 	}
 
-	if len(updatedBranch.Name) <= 0 {
-		return models.Branch{}, errors.New("user not found")
+	if !flag {
+		res := "branch with id" + " " + branch.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(branches, "", "   ")
+	// write into json file
+	body, err = json.MarshalIndent(branches, "", "   ")
 
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(b.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return updatedBranch, nil
+	w.WriteHeader(200)
+	w.Write([]byte("Updated"))
 }
 
-// Delete branch by id
-func (b *branchRepo) DeleteBranch(req *models.BranchPrimaryKey) (models.Branch, error) {
+// ==============================================================================================================================================
+func (b *branchRepo) DeleteBranch(w http.ResponseWriter, r *http.Request) {
+	// readFile
 	branches := make([]models.Branch, 0)
-
 	data, err := ioutil.ReadFile(b.fileName)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	err = json.Unmarshal(data, &branches)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	deletedBranch := models.Branch{}
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("ioutil err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte("Incorrect data"))
+		return
+	}
+
+	var branchId models.BranchPrimaryKey
+
+	err = json.Unmarshal(body, &branchId)
+	if err != nil {
+		log.Println("Post err:", err)
+		w.WriteHeader(400)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	flag := false
 	for i, v := range branches {
-		if v.Id == req.Id {
-			deletedBranch = branches[i]
+		if v.Id == branchId.Id {
 			branches = append(branches[:i], branches[i+1:]...)
+			flag = true
 		}
 	}
 
-	if len(deletedBranch.Name) <= 0 {
-		return models.Branch{}, errors.New("user not found")
+	if !flag {
+		res := "branch with id" + " " + branchId.Id + " " + "not found"
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(res))
+		return
 	}
 
-	body, err := json.MarshalIndent(branches, "", "   ")
+	// write into json file
+	body, err = json.MarshalIndent(branches, "", "   ")
 
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
 	err = ioutil.WriteFile(b.fileName, body, os.ModePerm)
 	if err != nil {
-		return models.Branch{}, err
+		log.Println("Unmarshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 
-	return deletedBranch, nil
+	w.WriteHeader(200)
+	w.Write([]byte("Deleted"))
 }

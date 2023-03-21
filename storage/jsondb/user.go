@@ -272,12 +272,10 @@ func (u *userRepo) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	// marshal updated  data and write it into  file
 	body, err = json.MarshalIndent(users, "", "   ")
 	if err != nil {
-		if err != nil {
-			log.Println("Marshal err:", err)
-			w.WriteHeader(500)
-			w.Write([]byte("Incorrect data"))
-			return
-		}
+		log.Println("Marshal err:", err)
+		w.WriteHeader(500)
+		w.Write([]byte("Incorrect data"))
+		return
 	}
 	err = ioutil.WriteFile(u.fileName, body, os.ModePerm)
 	if err != nil {

@@ -1,47 +1,27 @@
 package controller
 
-import "app/models"
+import (
+	"net/http"
+	"strings"
+)
 
-func (c *Controller) CreateBranch(req models.BranchReq) (string, error) {
-	id, err := c.store.Branch().CreateBranch(&req)
-	if err != nil {
-		return "", err
+func (c *Controller) Branch(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		c.store.Branch().CreateBranch(w, r)
 	}
+	if r.Method == "GET" {
+		path := strings.Split(r.URL.Path, "/")
 
-	return id, nil
-}
-
-func (c *Controller) GetBranchList(req *models.GetBranchListRequest) (*models.GetBranchListResponse, error) {
-	branches, err := c.store.Branch().GetList(req)
-	if err != nil {
-		return &models.GetBranchListResponse{}, err
+		if len(path) > 2 {
+			c.store.Branch().GetBranchById(w, r)
+		} else {
+			c.store.Branch().GetAll(w, r)
+		}
 	}
-
-	return branches, nil
-}
-
-func (c *Controller) GetBranchByIdController(req *models.BranchPrimaryKey) (models.Branch, error) {
-	branch, err := c.store.Branch().GetBranchById(req)
-	if err != nil {
-		return models.Branch{}, err
+	if r.Method == "PUT" {
+		c.store.Branch().UpdateBranch(w, r)
 	}
-
-	return branch, nil
-}
-
-func (c *Controller) UpdateBranchController(req *models.Branch) (models.Branch, error) {
-	branch, err := c.store.Branch().UpdateBranch(req)
-	if err != nil {
-		return models.Branch{}, err
+	if r.Method == "DELETE" {
+		c.store.Branch().DeleteBranch(w, r)
 	}
-
-	return branch, nil
-}
-func (c *Controller) DeleteBranchController(req *models.BranchPrimaryKey) (models.Branch, error) {
-	b, err := c.store.Branch().DeleteBranch(req)
-	if err != nil {
-		return models.Branch{}, err
-	}
-
-	return b, nil
 }
