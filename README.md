@@ -55,3 +55,30 @@ M:
     - Name
 
 ## 12. Shop cart boyicha default holati time sort bolishi kerak. DESC
+
+# // user crud api
+http.HandleFunc("/user", c.User)
+http.HandleFunc("/user/", c.User)
+
+# // exchange money api
+
+http.HandleFunc("/exchange", c.ExchangeMoney)
+
+# // category crud api
+http.HandleFunc("/category", c.Category)
+http.HandleFunc("/category/", c.Category)
+
+# // product api crud
+http.HandleFunc("/product", c.Product)
+http.HandleFunc("/product/", c.Product)
+
+# // shopcart api crud
+http.HandleFunc("/shopcart", c.ShopCart)
+http.HandleFunc("/shopcart/", c.ShopCart)
+
+# // calc total price with discount
+// http.HandleFunc("/totalshopcart/", c.CalcTotalPrice)
+
+# // branch api crud
+http.HandleFunc("/branch", c.Branch)
+http.HandleFunc("/branch/", c.Branch)
