@@ -64,7 +64,6 @@ func (s *shopCartRepo) AddShopCart(req *models.AddShopCart) (models.ShopCart, er
 	}
 
 	return newShopCart, nil
-
 }
 
 func (s *shopCartRepo) RemoveShopCart(req *models.RemoveShopCart) (models.ShopCart, error) {
@@ -83,14 +82,16 @@ func (s *shopCartRepo) RemoveShopCart(req *models.RemoveShopCart) (models.ShopCa
 	}
 
 	deletedShopCart := models.ShopCart{}
+	flag := false
 	for i, v := range carts {
 		if v.UserId == req.UserId && v.ProductId == req.ProductId {
 			deletedShopCart = carts[i]
 			carts = append(carts[:i], carts[i+1:]...)
+			flag =  true
 		}
 	}
 
-	if len(deletedShopCart.UserId) <= 0 {
+	if !flag {
 		return models.ShopCart{}, errors.New("shop-cart not found")
 	}
 

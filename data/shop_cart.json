@@ -14019,5 +14019,19 @@
       "count": 4,
       "status": true,
       "time": "2023-02-25 18:43:05"
+   },
+   {
+      "product_id": "f66d03b1-be15-4def-8cf7-28cd9fb72c68",
+      "user_id": "17dcaaf2-dfef-43bc-8008-1bea60bbef02",
+      "count": 4,
+      "status": false,
+      "time": "2023-03-22 10:56:25"
+   },
+   {
+      "product_id": "ab24c8e8-878a-4b20-ba09-f68de00bbe3d",
+      "user_id": "17dcaaf2-dfef-43bc-8008-1bea60bbef02",
+      "count": 7,
+      "status": false,
+      "time": "2023-03-22 11:14:50"
    }
 ]

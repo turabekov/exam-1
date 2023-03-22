@@ -32,6 +32,12 @@ func main() {
 	http.HandleFunc("/product", c.Product)
 	http.HandleFunc("/product/", c.Product)
 
+	// shopcart api crud
+	http.HandleFunc("/shopcart", c.ShopCart)
+	http.HandleFunc("/shopcart/", c.ShopCart)
+	// calc total price with discount
+	// http.HandleFunc("/totalshopcart/", c.CalcTotalPrice)
+
 	// branch api crud
 	http.HandleFunc("/branch", c.Branch)
 	http.HandleFunc("/branch/", c.Branch)
